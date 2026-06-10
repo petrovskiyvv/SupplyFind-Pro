@@ -1,0 +1,16 @@
+fastapi
+sqlalchemy
+psycopg2-binary
+pydantic-settings
+uvicorn
+python-multipart
+tavily-python
+openai
+duckduckgo_search
+httpx
+beautifulsoup4
+pdfplumber
+openpyxl
+redis
+alembic
+python-dateutil
