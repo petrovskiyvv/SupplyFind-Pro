@@ -54,6 +54,7 @@ class RFQService:
         db: Session,
         supplier_id: int,
         request_text: str,
+        recipient_email: Optional[str] = None,
         attachment_bytes: Optional[bytes] = None,
         attachment_filename: Optional[str] = None,
     ) -> dict:
@@ -65,7 +66,7 @@ class RFQService:
         if not supplier:
             raise ValueError("Supplier not found")
 
-        email_to = supplier.contact_email or (supplier.emails[0] if supplier.emails else None)
+        email_to = recipient_email or supplier.contact_email or (supplier.emails[0] if supplier.emails else None)
         if not email_to:
             raise ValueError("Supplier has no contact email address configured")
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class LocalizationService extends ChangeNotifier {
-  Locale _locale = const Locale('ru');
+  final Locale _locale = const Locale('ru');
   Locale get locale => _locale;
 
   static final Map<String, Map<String, String>> _localizedValues = {
@@ -64,73 +64,10 @@ class LocalizationService extends ChangeNotifier {
       'city_krasnodar': 'Краснодар',
       'city_ekb': 'Екатеринбург',
     },
-    'en': {
-      'app_title': 'Food Suppliers',
-      'search_hint': 'Search by name...',
-      'category': 'Category',
-      'city': 'City',
-      'all': 'All',
-      'add_manual': 'Add Manual',
-      'ai_discovery': 'AI Discovery',
-      'discover_all': 'Global AI Discovery',
-      'compare': 'Compare',
-      'manual_tag': 'Manual',
-      'ai_tag': 'AI',
-      'no_suppliers': 'No suppliers found',
-      'inn': 'TAX ID (INN)',
-      'description': 'Description',
-      'website': 'Website',
-      'email': 'Email',
-      'phone': 'Phone',
-      'min_order': 'Min Order',
-      'price_range': 'Price',
-      'certificates': 'Certificates',
-      'delivery': 'Delivery Terms',
-      'notes': 'Your Notes',
-      'save': 'Save Changes',
-      'compare_title': 'Comparison',
-      'parameter': 'Parameter',
-      'rating': 'Rating',
-      'add_title': 'New Supplier',
-      'save_success': 'Successfully saved',
-      'hide': 'Hide',
-      'undo': 'Undo',
-      'supplier_hidden': 'Supplier hidden from list',
-      'rfq': 'Request Quote',
-      'revenue': 'Annual Revenue',
-      'status': 'Company Status',
-      'ai_summary': 'AI Analytics',
-      'error': 'An error occurred',
-      'select_filters': 'Select category and city for discovery',
-      'discovery_in_progress': 'AI Agent is scanning the market...',
-      'discovered_count': 'New suppliers found: ',
-      'catalog_title': 'Product Catalog',
-      'company_name': 'Company Name',
-      'loading_analytics': 'Generating report...',
-      'no_data_analysis': 'Not enough data for analysis',
-      'ai_report_title': 'AI Report for ZhiznMart / Sushkof',
-      'tap_to_jump': 'Tap to Jump!',
-      'score': 'Score',
-      'cat_dairy': 'Dairy',
-      'cat_vegetables': 'Vegetables',
-      'cat_meat': 'Meat',
-      'cat_bakery': 'Bakery',
-      'verify_checking': 'Verification required',
-      'active_status': 'Active organization',
-      'city_all': 'All',
-      'city_moscow': 'Moscow',
-      'city_spb': 'St. Petersburg',
-      'city_krasnodar': 'Krasnodar',
-      'city_ekb': 'Yekaterinburg',
-    }
   };
-
-  void toggleLocale() {
-    _locale = _locale.languageCode == 'ru' ? const Locale('en') : const Locale('ru');
-    notifyListeners();
-  }
 
   String translate(String key) {
     return _localizedValues[_locale.languageCode]?[key] ?? key;
   }
 }
+

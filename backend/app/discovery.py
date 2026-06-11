@@ -1,6 +1,7 @@
 import asyncio
 import re
 import random
+from typing import Optional
 from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 from . import models
@@ -113,7 +114,7 @@ def _is_aggregator(url: str) -> bool:
     return False
 
 
-def _extract_company_from_title(title: str) -> str | None:
+def _extract_company_from_title(title: str) -> Optional[str]:
     """Try to extract a real company name from Tavily title using legal form patterns."""
     if not title:
         return None
@@ -141,7 +142,7 @@ def _extract_company_from_domain(url: str) -> str:
     return name.strip().title()
 
 
-def _clean_company_name(raw_name: str | None) -> str:
+def _clean_company_name(raw_name: Optional[str]) -> str:
     """Deep-clean a raw search title into something resembling a company name."""
     if not raw_name:
         return "Неизвестный поставщик"
@@ -285,13 +286,15 @@ class DiscoveryService:
             if not existing:
                 supplier = models.Supplier(**supplier_data)
                 self.db.add(supplier)
-                new_suppliers.append(supplier)
+                try:
+                    self.db.commit()
+                    self.db.refresh(supplier)
+                    new_suppliers.append(supplier)
+                except Exception as e:
+                    self.db.rollback()
+                    logger.error(f"Error saving supplier: {e}")
             else:
                 logger.info(f"Skipping duplicate: {url}")
-
-        self.db.commit()
-        for s in new_suppliers:
-            self.db.refresh(s)
 
         return new_suppliers
 

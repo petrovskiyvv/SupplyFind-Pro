@@ -18,7 +18,7 @@ _LEGAL_FORM_PLAIN_RE = re.compile(
 )
 
 
-def _extract_company_name_from_text(text: str) -> str | None:
+def _extract_company_name_from_text(text: str) -> Optional[str]:
     """Extract company name from arbitrary text using legal form patterns."""
     if not text:
         return None

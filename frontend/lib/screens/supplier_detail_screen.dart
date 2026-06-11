@@ -371,6 +371,9 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       return;
     }
 
+    final List<String> emailList = email.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final Set<String> selectedEmails = Set<String>.from(emailList);
+
     final textController = TextEditingController();
     String selectedRequestType = 'Коммерческое предложение';
     Uint8List? attachmentBytes;
@@ -415,7 +418,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                       children: [
                         Text(_currentSupplier.name, style: const TextStyle(fontSize: 15)),
                         Text(
-                          email,
+                          emailList.length == 1 ? emailList[0] : 'Адресатов: ${emailList.length}',
                           style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.normal),
                         ),
                       ],
@@ -498,6 +501,49 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                       );
                     }).toList(),
                   ),
+                  const SizedBox(height: 16),
+                  const Text('Отправить на почту:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  if (emailList.length == 1)
+                    Text(emailList[0], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold))
+                  else
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 120),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: emailList.map((e) {
+                          final isChecked = selectedEmails.contains(e);
+                          return CheckboxListTile(
+                            title: Text(e, style: const TextStyle(fontSize: 13)),
+                            value: isChecked,
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            onChanged: (val) {
+                              setDialogState(() {
+                                if (val == true) {
+                                  selectedEmails.add(e);
+                                } else {
+                                  if (selectedEmails.length > 1) {
+                                    selectedEmails.remove(e);
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Необходимо выбрать хотя бы один email получателя'),
+                                        backgroundColor: Colors.orange,
+                                      )
+                                    );
+                                  }
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   // Text area
                   const Text('Дополнительные требования / спецификация:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
@@ -634,6 +680,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                   final res = await apiService.sendRFQWithFile(
                     supplierId: _currentSupplier.id,
                     requestText: fullText,
+                    emailSentTo: selectedEmails.join(', '),
                     fileBytes: attachmentBytes,
                     fileName: attachmentName,
                   );
@@ -939,31 +986,88 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       spacing: 20,
       runSpacing: 20,
       children: [
-        _buildInfoCard(loc.translate('inn'), _currentSupplier.inn, Icons.fingerprint, theme, onTap: () => _launchURL('https://focus.kontur.ru/search?query=${_currentSupplier.inn}')),
-        _buildInfoCard(loc.translate('website'), _currentSupplier.website, Icons.language, theme, onTap: () => _launchURL(_currentSupplier.website)),
-        _buildInfoCard(loc.translate('email'), _currentSupplier.contactEmail, Icons.email_outlined, theme, onTap: () => _launchURL('mailto:${_currentSupplier.contactEmail}')),
-        _buildInfoCard(loc.translate('phone'), _currentSupplier.contactPhone, Icons.phone_outlined, theme, onTap: () => _launchURL('tel:${_currentSupplier.contactPhone}')),
+        _buildInfoCard(loc.translate('inn'), _currentSupplier.inn, Icons.fingerprint, theme, onItemTap: (inn) => _launchURL('https://focus.kontur.ru/search?query=$inn')),
+        _buildInfoCard(loc.translate('website'), _currentSupplier.website, Icons.language, theme, onItemTap: (url) => _launchURL(url)),
+        _buildInfoCard(loc.translate('email'), _currentSupplier.contactEmail, Icons.email_outlined, theme, onItemTap: (email) => _launchURL('mailto:$email')),
+        _buildInfoCard(loc.translate('phone'), _currentSupplier.contactPhone, Icons.phone_outlined, theme, onItemTap: (phone) => _launchURL('tel:$phone')),
         _buildInfoCard(loc.translate('min_order'), _currentSupplier.minOrder, Icons.shopping_basket_outlined, theme),
         _buildInfoCard(loc.translate('delivery'), _currentSupplier.deliveryTerms, Icons.local_shipping_outlined, theme),
       ],
     );
   }
 
-  Widget _buildInfoCard(String label, String value, IconData icon, ThemeData theme, {VoidCallback? onTap}) {
+  Widget _buildInfoCard(String label, String value, IconData icon, ThemeData theme, {Function(String)? onItemTap}) {
+    List<String> items = [];
+    if (value.isNotEmpty) {
+      items = value.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
+
     return Container(
       width: (MediaQuery.of(context).size.width - 60) / 2,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: theme.colorScheme.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: theme.colorScheme.outline.withOpacity(0.1))),
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [Icon(icon, size: 16, color: theme.colorScheme.primary), const SizedBox(width: 8), Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey))]),
-            const SizedBox(height: 8),
-            Text(value.isEmpty ? 'N/A' : value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14), overflow: TextOverflow.ellipsis),
-          ],
-        ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (items.isEmpty)
+            const Text('N/A', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14))
+          else if (items.length == 1)
+            InkWell(
+              onTap: onItemTap != null ? () => onItemTap(items[0]) : null,
+              child: Text(
+                items[0],
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                overflow: TextOverflow.ellipsis,
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: items.map((item) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: InkWell(
+                    onTap: onItemTap != null ? () => onItemTap(item) : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              item,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (onItemTap != null) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.open_in_new, size: 10, color: theme.colorScheme.primary),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
       ),
     );
   }
@@ -1009,12 +1113,21 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
-            children: _currentSupplier.priceListUrls.map((url) => Chip(
+            runSpacing: 8,
+            children: _currentSupplier.priceListUrls.map((url) => ActionChip(
               avatar: Icon(Icons.attach_file, size: 14, color: theme.colorScheme.primary),
-              label: Text(url, style: const TextStyle(fontSize: 12)),
+              label: Text(
+                url, 
+                style: TextStyle(
+                  fontSize: 12, 
+                  color: theme.colorScheme.primary,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
               backgroundColor: theme.colorScheme.primary.withOpacity(0.07),
               side: BorderSide(color: theme.colorScheme.primary.withOpacity(0.2)),
               padding: EdgeInsets.zero,
+              onPressed: () => _launchURL(url),
             )).toList(),
           ),
         ],

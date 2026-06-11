@@ -30,6 +30,21 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
   final Set<int> selectedSupplierIds = {};
   List<Supplier> currentSuppliers = [];
 
+  bool _isSearching = false;
+  bool _searchCollapsed = false;
+  String? _searchingCategory;
+  String? _searchingCity;
+  Timer? _searchTimer;
+  int _loadingMessageIndex = 0;
+  Timer? _loadingMessageTimer;
+
+  final List<String> _loadingMessages = [
+    "Запрашиваю базы данных...",
+    "Парсю сайты поставщиков...",
+    "Верифицирую ИНН...",
+    "Формирую рейтинг..."
+  ];
+
   final List<String> categories = ['All', 'Dairy', 'Vegetables', 'Meat', 'Bakery'];
   final List<String> cities = ['All', 'Москва', 'Санкт-Петербург', 'Краснодар', 'Екатеринбург'];
 
@@ -38,6 +53,52 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
     super.initState();
     _loadSuppliers();
     _checkSmtpStatus();
+    _checkDiscoveryStatus();
+  }
+
+  Future<void> _checkDiscoveryStatus() async {
+    try {
+      final status = await apiService.getDiscoveryStatus();
+      if (status['active'] == true && mounted) {
+        setState(() {
+          _isSearching = true;
+          _searchCollapsed = true;
+          _searchingCategory = status['category'];
+          _searchingCity = status['city'];
+        });
+
+        _loadingMessageTimer?.cancel();
+        _loadingMessageTimer = Timer.periodic(const Duration(seconds: 2), (t) {
+          if (mounted) {
+            setState(() {
+              _loadingMessageIndex = (_loadingMessageIndex + 1) % _loadingMessages.length;
+            });
+          } else {
+            t.cancel();
+          }
+        });
+
+        _searchTimer?.cancel();
+        _searchTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+          _loadSuppliers();
+          _checkDiscoveryStatusPolling();
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _checkDiscoveryStatusPolling() async {
+    try {
+      final status = await apiService.getDiscoveryStatus();
+      if (status['active'] != true && mounted) {
+        _searchTimer?.cancel();
+        _loadingMessageTimer?.cancel();
+        setState(() {
+          _isSearching = false;
+        });
+        _loadSuppliers();
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkSmtpStatus() async {
@@ -265,6 +326,13 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _searchTimer?.cancel();
+    _loadingMessageTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _runDiscovery(bool isBatch) async {
     final loc = Provider.of<LocalizationService>(context, listen: false);
     if (!isBatch && (selectedCategory == null || selectedCategory == 'All' || selectedCity == null || selectedCity == 'All')) {
@@ -272,7 +340,29 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
       return;
     }
 
-    _showAdvancedLoadingOverlay(isBatch);
+    setState(() {
+      _isSearching = true;
+      _searchCollapsed = false;
+      _searchingCategory = isBatch ? 'Все' : selectedCategory;
+      _searchingCity = isBatch ? 'Все' : selectedCity;
+      _loadingMessageIndex = 0;
+    });
+
+    _loadingMessageTimer?.cancel();
+    _loadingMessageTimer = Timer.periodic(const Duration(seconds: 2), (t) {
+      if (mounted) {
+        setState(() {
+          _loadingMessageIndex = (_loadingMessageIndex + 1) % _loadingMessages.length;
+        });
+      } else {
+        t.cancel();
+      }
+    });
+
+    _searchTimer?.cancel();
+    _searchTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      _loadSuppliers();
+    });
 
     try {
       if (isBatch) {
@@ -280,63 +370,184 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
       } else {
         await apiService.discoverSuppliers(selectedCategory!, selectedCity!);
       }
-      if (mounted) Navigator.pop(context);
-      _loadSuppliers();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Text(isBatch 
+                    ? 'Поиск по всем категориям успешно завершен!' 
+                    : 'Поиск для категории "$selectedCategory" в городе "$selectedCity" успешно завершен!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${loc.translate('error')}: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${loc.translate('error')}: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      _loadingMessageTimer?.cancel();
+      _searchTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+        _loadSuppliers();
       }
     }
   }
 
-  void _showAdvancedLoadingOverlay(bool isBatch) {
-    final loc = Provider.of<LocalizationService>(context, listen: false);
-    final List<String> messages = [
-      "Запрашиваю базы данных...",
-      "Парсю сайты поставщиков...",
-      "Верифицирую ИНН...",
-      "Формирую рейтинг..."
-    ];
-    int messageIndex = 0;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          Timer.periodic(const Duration(seconds: 2), (t) {
-            if (!mounted) { t.cancel(); return; }
-            setDialogState(() { messageIndex = (messageIndex + 1) % messages.length; });
-          });
-
-          return Dialog.fullscreen(
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.95),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Spacer(),
-                const DinoGame(),
-                const SizedBox(height: 40),
-                SizedBox(
-                  width: 200,
-                  child: LinearProgressIndicator(
-                    backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
+  Widget _buildFullscreenSearchOverlay(LocalizationService loc, ThemeData theme) {
+    return Positioned.fill(
+      child: Container(
+        color: theme.scaffoldBackgroundColor.withOpacity(0.96),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Spacer(),
+            const DinoGame(),
+            const SizedBox(height: 40),
+            SizedBox(
+              width: 240,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                  color: theme.colorScheme.secondary,
+                  minHeight: 6,
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  messages[messageIndex],
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                Text(loc.translate('discovery_in_progress'), style: const TextStyle(color: Colors.grey)),
-                const Spacer(),
-              ],
+              ),
             ),
-          );
-        }
+            const SizedBox(height: 24),
+            Text(
+              _loadingMessages[_loadingMessageIndex],
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              loc.translate('discovery_in_progress'),
+              style: const TextStyle(color: Colors.grey, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Найдено поставщиков: ${currentSuppliers.length}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _searchCollapsed = true;
+                });
+              },
+              icon: const Icon(Icons.splitscreen_outlined, size: 18),
+              label: const Text('Свернуть в фон'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                elevation: 4,
+                textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const Spacer(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsedSearchBanner(LocalizationService loc, ThemeData theme) {
+    return Positioned(
+      bottom: 20,
+      left: 20,
+      right: 20,
+      child: Card(
+        elevation: 8,
+        shadowColor: theme.colorScheme.shadow.withOpacity(0.3),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: theme.colorScheme.primaryContainer,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Поиск в фоне: ${_searchingCategory ?? ""} (${_searchingCity ?? ""})',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Найдено: ${currentSuppliers.length} • ${_loadingMessages[_loadingMessageIndex]}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onPrimaryContainer.withOpacity(0.8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _searchCollapsed = false;
+                  });
+                },
+                icon: const Icon(Icons.open_in_full, size: 14),
+                label: const Text('Развернуть'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  elevation: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -348,35 +559,43 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _buildCustomAppBar(loc, theme),
-            _buildAdvancedSearchBar(loc, theme),
-            Expanded(
-              child: FutureBuilder<List<Supplier>>(
-                future: futureSuppliers,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) return Center(child: Text(loc.translate('no_suppliers')));
+            Column(
+              children: [
+                _buildCustomAppBar(loc, theme),
+                _buildAdvancedSearchBar(loc, theme),
+                Expanded(
+                  child: FutureBuilder<List<Supplier>>(
+                    future: futureSuppliers,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) return Center(child: Text(loc.translate('no_suppliers')));
 
-                  currentSuppliers = snapshot.data!;
-                  var filtered = currentSuppliers.where((s) {
-                    if (onlyVerified && !s.isVerified) return false;
-                    if (hasCertificates && !s.hasCertificates) return false;
-                    return true;
-                  }).toList();
+                      currentSuppliers = snapshot.data!;
+                      var filtered = currentSuppliers.where((s) {
+                        if (onlyVerified && !s.isVerified) return false;
+                        if (hasCertificates && !s.hasCertificates) return false;
+                        return true;
+                      }).toList();
 
-                  return ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) => _buildSupplierCard(filtered[index], loc, theme),
-                  );
-                },
-              ),
+                      return ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) => _buildSupplierCard(filtered[index], loc, theme),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
+            if (_isSearching && !_searchCollapsed)
+              _buildFullscreenSearchOverlay(loc, theme),
+            if (_isSearching && _searchCollapsed)
+              _buildCollapsedSearchBanner(loc, theme),
           ],
         ),
       ),
@@ -457,10 +676,6 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
           IconButton(
             icon: Icon(themeService.themeMode == ThemeMode.light ? Icons.dark_mode_outlined : Icons.light_mode_outlined),
             onPressed: themeService.toggleTheme,
-          ),
-          IconButton(
-            icon: const Icon(Icons.language_outlined),
-            onPressed: loc.toggleLocale,
           ),
           if (selectedSupplierIds.isNotEmpty)
             ElevatedButton.icon(
@@ -664,13 +879,25 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
   }
 
   Widget _buildContactRow(IconData icon, String text, ThemeData theme) {
+    String displayText = "N/A";
+    if (text.isNotEmpty) {
+      final items = text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      if (items.isNotEmpty) {
+        if (items.length > 1) {
+          displayText = "${items[0]} (+ еще ${items.length - 1})";
+        } else {
+          displayText = items[0];
+        }
+      }
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
           Icon(icon, size: 16, color: theme.colorScheme.primary.withOpacity(0.5)),
           const SizedBox(width: 8),
-          Expanded(child: Text(text.isEmpty ? "N/A" : text, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+          Expanded(child: Text(displayText, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
         ],
       ),
     );

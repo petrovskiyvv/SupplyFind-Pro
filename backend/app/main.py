@@ -36,6 +36,23 @@ except:
 
 from .services.scoring import calculate_score
 
+active_searches = set()
+
+@app.get("/api/discovery/status")
+def get_discovery_status():
+    if active_searches:
+        try:
+            item = list(active_searches)[0]
+            parts = item.split(":")
+            return {
+                "active": True,
+                "category": parts[0],
+                "city": parts[1]
+            }
+        except:
+            pass
+    return {"active": False}
+
 @app.post("/api/suppliers/search", response_model=List[schemas.Supplier])
 async def search_suppliers(
     category: str,
@@ -78,8 +95,13 @@ async def search_suppliers(
 
     if len(db_results) < 3:
         # Run AI Discovery
-        service = discovery.DiscoveryService(db)
-        await service.discover_suppliers(category, city)
+        search_key = f"{category}:{city}"
+        active_searches.add(search_key)
+        try:
+            service = discovery.DiscoveryService(db)
+            await service.discover_suppliers(category, city)
+        finally:
+            active_searches.discard(search_key)
         
         # Re-query
         query = db.query(models.Supplier).filter(models.Supplier.category == category, models.Supplier.city == city)
@@ -124,16 +146,21 @@ async def discover_suppliers_old(
 
 @app.post("/suppliers/discover/all", response_model=List[schemas.Supplier])
 async def discover_all_suppliers(db: Session = Depends(get_db)):
-    service = discovery.DiscoveryService(db)
-    categories = ["Dairy", "Vegetables", "Meat", "Bakery"]
-    cities = ["Москва", "Санкт-Петербург", "Краснодар", "Екатеринбург"]
-    
-    all_new = []
-    for cat in categories:
-        for city in cities:
-            new = await service.discover_suppliers(cat, city)
-            all_new.extend(new)
-    return all_new
+    search_key = "Все:Все"
+    active_searches.add(search_key)
+    try:
+        service = discovery.DiscoveryService(db)
+        categories = ["Dairy", "Vegetables", "Meat", "Bakery"]
+        cities = ["Москва", "Санкт-Петербург", "Краснодар", "Екатеринбург"]
+        
+        all_new = []
+        for cat in categories:
+            for city in cities:
+                new = await service.discover_suppliers(cat, city)
+                all_new.extend(new)
+        return all_new
+    finally:
+        active_searches.discard(search_key)
 
 @app.post("/suppliers/compare", response_model=dict)
 def compare_suppliers(supplier_ids: List[int], db: Session = Depends(get_db)):
@@ -397,7 +424,10 @@ async def send_rfq(
 ):
     rfq_service = RFQService()
     try:
-        res = await rfq_service.send_rfq(db, rfq_data.supplier_id, rfq_data.request_text)
+        res = await rfq_service.send_rfq(
+            db, rfq_data.supplier_id, rfq_data.request_text,
+            recipient_email=rfq_data.email_sent_to
+        )
         return res
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -408,6 +438,7 @@ async def send_rfq(
 async def send_rfq_with_file(
     supplier_id: int = Form(...),
     request_text: str = Form(...),
+    email_sent_to: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
@@ -426,6 +457,7 @@ async def send_rfq_with_file(
     try:
         res = await rfq_service.send_rfq(
             db, supplier_id, request_text,
+            recipient_email=email_sent_to,
             attachment_bytes=attachment_bytes,
             attachment_filename=attachment_filename,
         )

@@ -148,13 +148,14 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> sendRFQ(int supplierId, String requestText) async {
+  Future<Map<String, dynamic>> sendRFQ(int supplierId, String requestText, {String? emailSentTo}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/api/rfq/send'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'supplier_id': supplierId,
         'request_text': requestText,
+        if (emailSentTo != null) 'email_sent_to': emailSentTo,
       }),
     );
     if (response.statusCode == 200) {
@@ -169,6 +170,7 @@ class ApiService {
   Future<Map<String, dynamic>> sendRFQWithFile({
     required int supplierId,
     required String requestText,
+    String? emailSentTo,
     Uint8List? fileBytes,
     String? fileName,
   }) async {
@@ -176,6 +178,9 @@ class ApiService {
     final request = http.MultipartRequest('POST', uri);
     request.fields['supplier_id'] = supplierId.toString();
     request.fields['request_text'] = requestText;
+    if (emailSentTo != null) {
+      request.fields['email_sent_to'] = emailSentTo;
+    }
 
     if (fileBytes != null && fileName != null) {
       request.files.add(
@@ -234,5 +239,13 @@ class ApiService {
     }
     final detail = jsonDecode(response.body)['detail'] ?? 'Failed to configure SMTP';
     throw Exception(detail);
+  }
+
+  Future<Map<String, dynamic>> getDiscoveryStatus() async {
+    final response = await http.get(Uri.parse('$baseUrl/api/discovery/status'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    throw Exception('Failed to get discovery status');
   }
 }
