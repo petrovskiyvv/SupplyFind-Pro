@@ -123,26 +123,53 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
           try {
             final res = await apiService.uploadPriceList(_currentSupplier.id, file.name, bytes);
             
-            // Reload supplier details to get new products
-            final updatedSupplier = await apiService.getSuppliers(
-              category: _currentSupplier.category,
-              city: _currentSupplier.city,
-            ).then((list) => list.firstWhere((s) => s.id == _currentSupplier.id));
-            
-            setState(() {
-              _currentSupplier = updatedSupplier;
-            });
+            // Reload supplier by ID to get updated price_items
+            try {
+              final updatedSupplier = await apiService.getSupplierById(_currentSupplier.id);
+              setState(() { _currentSupplier = updatedSupplier; });
+            } catch (_) {}
             
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("Успешно загружено: ${res['message']}"))
-              );
+              final int parsed = res['items_parsed'] ?? 0;
+              final String? warning = res['parse_warning'];
+              if (parsed > 0) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text("✓ Загружено: $parsed позиций из ${file.name}"),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 4),
+                ));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text("⚠ Файл прикреплён, но позиции не распознаны.\n${warning ?? ''}"),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 6),
+                ));
+              }
+            }
+            
+            if (mounted) {
+              final int parsed = res['items_parsed'] ?? 0;
+              final String? warning = res['parse_warning'];
+              if (parsed > 0) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text("✓ Загружено: $parsed позиций из ${file.name}"),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 4),
+                ));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text("⚠ Файл прикреплён, но позиции не распознаны.\n${warning ?? ''}"),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 6),
+                ));
+              }
             }
           } catch (e) {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("Ошибка загрузки: $e"))
-              );
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text("Ошибка загрузки файла: $e"),
+                backgroundColor: Colors.red,
+              ));
             }
           } finally {
             if (mounted) {
@@ -942,39 +969,141 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
   }
 
   Widget _buildProductCatalog(ThemeData theme) {
-    if (_currentSupplier.products.isEmpty) {
+    final hasProducts = _currentSupplier.products.isNotEmpty;
+    final hasPriceItems = _currentSupplier.priceItems.isNotEmpty;
+    final hasPriceUrls = _currentSupplier.priceListUrls.isNotEmpty;
+
+    if (!hasProducts && !hasPriceItems && !hasPriceUrls) {
       return const SizedBox.shrink();
     }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 32),
-        const Text(
-          "Каталог товаров / Прайс-лист",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _currentSupplier.products.length,
-          itemBuilder: (context, index) {
-            final product = _currentSupplier.products[index];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                trailing: Text(
-                  "${product.price} руб. / ${product.unit}",
-                  style: TextStyle(
-                    color: theme.colorScheme.secondary,
-                    fontWeight: FontWeight.bold,
-                  ),
+        Row(
+          children: [
+            const Text(
+              "Каталог товаров / Прайс-лист",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const Spacer(),
+            if (hasPriceItems)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: Text(
+                  '${_currentSupplier.priceItems.length} поз.',
+                  style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600),
                 ),
               ),
-            );
-          },
+          ],
         ),
+
+        // Attached file names
+        if (hasPriceUrls) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: _currentSupplier.priceListUrls.map((url) => Chip(
+              avatar: Icon(Icons.attach_file, size: 14, color: theme.colorScheme.primary),
+              label: Text(url, style: const TextStyle(fontSize: 12)),
+              backgroundColor: theme.colorScheme.primary.withOpacity(0.07),
+              side: BorderSide(color: theme.colorScheme.primary.withOpacity(0.2)),
+              padding: EdgeInsets.zero,
+            )).toList(),
+          ),
+        ],
+
+        const SizedBox(height: 12),
+
+        // Price items from parsed price list (priority display)
+        if (hasPriceItems) ...[
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _currentSupplier.priceItems.length,
+            itemBuilder: (context, index) {
+              final item = _currentSupplier.priceItems[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: theme.colorScheme.outline.withOpacity(0.08)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.productName,
+                          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        '${item.price.toStringAsFixed(item.price.truncateToDouble() == item.price ? 0 : 2)} ₽',
+                        style: TextStyle(
+                          color: theme.colorScheme.secondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.secondary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '/ ${item.unit}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.secondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+
+        // Manually added products (if any, separate section)
+        if (hasProducts && hasPriceItems) ...[
+          const SizedBox(height: 16),
+          Text('Товары (вручную)', style: TextStyle(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+        ],
+        if (hasProducts)
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _currentSupplier.products.length,
+            itemBuilder: (context, index) {
+              final product = _currentSupplier.products[index];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 6),
+                child: ListTile(
+                  dense: true,
+                  title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  trailing: Text(
+                    "${product.price} ₽ / ${product.unit}",
+                    style: TextStyle(color: theme.colorScheme.secondary, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              );
+            },
+          ),
       ],
     );
   }

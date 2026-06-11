@@ -10,13 +10,40 @@ class Product {
     return Product(
       id: json['id'] ?? 0,
       name: json['name'] ?? '',
-      price: json['price'] ?? '',
+      price: json['price']?.toString() ?? '',
       unit: json['unit'] ?? '',
     );
   }
 
   Map<String, dynamic> toJson() {
     return {'name': name, 'price': price, 'unit': unit};
+  }
+}
+
+/// Represents a parsed price item from an uploaded price list file.
+class PriceItem {
+  final int id;
+  final String productName;
+  final double price;
+  final String unit;
+  final String? parsedAt;
+
+  PriceItem({
+    required this.id,
+    required this.productName,
+    required this.price,
+    required this.unit,
+    this.parsedAt,
+  });
+
+  factory PriceItem.fromJson(Map<String, dynamic> json) {
+    return PriceItem(
+      id: json['id'] ?? 0,
+      productName: json['product_name'] ?? '',
+      price: double.tryParse(json['price']?.toString() ?? '0') ?? 0.0,
+      unit: json['unit'] ?? 'кг',
+      parsedAt: json['parsed_at'],
+    );
   }
 }
 
@@ -44,6 +71,8 @@ class Supplier {
   final String revenue;
   final String status;
   final List<Product> products;
+  final List<PriceItem> priceItems;
+  final List<String> priceListUrls;
 
   Supplier({
     required this.id,
@@ -69,10 +98,24 @@ class Supplier {
     required this.revenue,
     required this.status,
     this.products = const [],
+    this.priceItems = const [],
+    this.priceListUrls = const [],
   });
 
   factory Supplier.fromJson(Map<String, dynamic> json) {
-    var productList = (json['products'] as List?)?.map((i) => Product.fromJson(i)).toList() ?? [];
+    final productList = (json['products'] as List?)
+            ?.map((i) => Product.fromJson(i))
+            .toList() ??
+        [];
+    final priceItemList = (json['price_items'] as List?)
+            ?.map((i) => PriceItem.fromJson(i))
+            .toList() ??
+        [];
+    final priceUrls = (json['price_list_urls'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
+
     return Supplier(
       id: json['id'],
       name: json['name'] ?? '',
@@ -97,6 +140,8 @@ class Supplier {
       revenue: json['revenue'] ?? 'Н/Д',
       status: json['status'] ?? 'Действующая',
       products: productList,
+      priceItems: priceItemList,
+      priceListUrls: priceUrls,
     );
   }
 

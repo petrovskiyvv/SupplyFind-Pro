@@ -5,10 +5,13 @@ from typing import List, Optional
 import redis
 import tempfile
 import os
+import logging
 from .price_analyzer import PriceAnalyzer
 from .services.rfq_service import RFQService
 import json
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from . import models, schemas, database, discovery
 from .database import engine, get_db
@@ -249,12 +252,11 @@ async def upload_price(
     supplier = db.query(models.Supplier).filter(models.Supplier.id == supplier_id).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
-        
+
     suffix = os.path.splitext(file.filename)[1].lower()
     if suffix not in ['.pdf', '.xlsx', '.xls']:
-        raise HTTPException(status_code=400, detail="Only PDF and Excel files are supported")
-        
-    # Create temp file
+        raise HTTPException(status_code=400, detail="Поддерживаются только PDF и Excel (.xlsx, .xls)")
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         content = await file.read()
         tmp.write(content)
@@ -262,60 +264,74 @@ async def upload_price(
 
     try:
         analyzer = PriceAnalyzer()
-        if suffix == '.pdf':
-            items = analyzer.analyze_pdf(tmp_path)
-        else:
-            items = analyzer.analyze_excel(tmp_path)
-            
-        if not items:
-            raise HTTPException(status_code=400, detail="No price items could be extracted from the file")
-            
-        # Clear old price items for this supplier
-        db.query(models.PriceItem).filter(models.PriceItem.supplier_id == supplier_id).delete()
-        
-        # Save new price items
-        for item in items:
-            db_item = models.PriceItem(
-                supplier_id=supplier_id,
-                product_name=item["product_name"],
-                price=item["price"],
-                unit=item["unit"]
-            )
-            db.add(db_item)
-            
-        # Add filename to price_list_urls
+        items = []
+        parse_warning = None
+
+        try:
+            if suffix == '.pdf':
+                items = analyzer.analyze_pdf(tmp_path)
+            else:
+                items = analyzer.analyze_excel(tmp_path)
+        except Exception as parse_ex:
+            parse_warning = str(parse_ex)
+            logger.warning(f"[upload-price] parser error for '{file.filename}': {parse_ex}")
+
+        # Always attach the filename to the supplier record
         price_urls = set(supplier.price_list_urls or [])
         price_urls.add(file.filename)
         supplier.price_list_urls = list(price_urls)
-        
-        # Update supplier score
-        supplier_dict = {
-            "is_verified": supplier.is_verified,
-            "reg_date": supplier.reg_date,
-            "is_risky": supplier.is_risky,
-            "phones": supplier.phones,
-            "emails": supplier.emails,
-            "personal_email": supplier.personal_email,
-            "has_certificate": supplier.has_certificate,
-            "is_manufacturer": supplier.is_manufacturer,
-            "payment_delay_days": supplier.payment_delay_days,
-            "has_delivery": supplier.has_delivery
-        }
-        score, explanation = calculate_score(supplier_dict)
-        supplier.score = score
-        supplier.score_explanation = explanation
-        
+
+        if items:
+            # Replace old price items
+            db.query(models.PriceItem).filter(models.PriceItem.supplier_id == supplier_id).delete()
+            for item in items:
+                db.add(models.PriceItem(
+                    supplier_id=supplier_id,
+                    product_name=item["product_name"],
+                    price=item["price"],
+                    unit=item["unit"]
+                ))
+
+            # Update supplier score
+            supplier_dict = {
+                "is_verified": supplier.is_verified,
+                "reg_date": supplier.reg_date,
+                "is_risky": supplier.is_risky,
+                "phones": supplier.phones,
+                "emails": supplier.emails,
+                "personal_email": supplier.personal_email,
+                "has_certificate": supplier.has_certificate,
+                "is_manufacturer": supplier.is_manufacturer,
+                "payment_delay_days": supplier.payment_delay_days,
+                "has_delivery": supplier.has_delivery
+            }
+            score, explanation = calculate_score(supplier_dict)
+            supplier.score = score
+            supplier.score_explanation = explanation
+
         db.commit()
         db.refresh(supplier)
-        
-        summary = analyzer.get_summary(items)
-        return {
-            "message": f"Successfully parsed and saved {len(items)} price items",
-            "summary": summary
-        }
+
+        summary = analyzer.get_summary(items) if items else {}
+
+        if items:
+            return {
+                "message": f"Успешно разобрано {len(items)} позиций из файла '{file.filename}'",
+                "items_parsed": len(items),
+                "summary": summary,
+                "parse_warning": None,
+            }
+        else:
+            return {
+                "message": f"Файл '{file.filename}' прикреплён к поставщику. Авторазбор позиций не удался — файл имеет нестандартную структуру.",
+                "items_parsed": 0,
+                "summary": {},
+                "parse_warning": parse_warning or "Не найдено строк с товарами и ценами.",
+            }
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Price list processing failed: {str(e)}")
+        logger.error(f"[upload-price] unexpected error for supplier {supplier_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка обработки файла: {str(e)}")
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

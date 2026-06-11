@@ -9,6 +9,14 @@ class ApiService {
     defaultValue: 'http://localhost:8000'
   );
 
+  Future<Supplier> getSupplierById(int id) async {
+    final response = await http.get(Uri.parse('$baseUrl/suppliers/$id'));
+    if (response.statusCode == 200) {
+      return Supplier.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load supplier $id');
+  }
+
   Future<List<Supplier>> getSuppliers({String? category, String? city, bool verifiedOnly = false, bool hasCertificate = false}) async {
     final queryParameters = <String, String>{};
     if (category != null && category.isNotEmpty && category != 'All') {

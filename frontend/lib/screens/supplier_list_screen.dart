@@ -25,6 +25,7 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
   
   bool onlyVerified = false;
   bool hasCertificates = false;
+  bool _smtpConfigured = false;
   
   final Set<int> selectedSupplierIds = {};
   List<Supplier> currentSuppliers = [];
@@ -36,6 +37,221 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
   void initState() {
     super.initState();
     _loadSuppliers();
+    _checkSmtpStatus();
+  }
+
+  Future<void> _checkSmtpStatus() async {
+    try {
+      final status = await apiService.getSmtpStatus();
+      if (mounted) setState(() => _smtpConfigured = status['configured'] == true);
+    } catch (_) {}
+  }
+
+  void _showSmtpDialog(ThemeData theme) {
+    final hostCtrl = TextEditingController(text: 'smtp.gmail.com');
+    final portCtrl = TextEditingController(text: '587');
+    final userCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final fromCtrl = TextEditingController();
+    bool obscurePass = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.mail_lock_outlined, color: theme.colorScheme.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text('Настройка SMTP почты'),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: theme.colorScheme.primary.withOpacity(0.15)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Настройте SMTP один раз для отправки запросов КП поставщикам напрямую из приложения.',
+                            style: TextStyle(fontSize: 13, color: Colors.blue),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: hostCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'SMTP сервер',
+                            hintText: 'smtp.gmail.com',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            isDense: true,
+                            prefixIcon: const Icon(Icons.dns_outlined, size: 18),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: portCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'Порт',
+                            hintText: '587',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: userCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Email-адрес отправителя',
+                      hintText: 'your@gmail.com',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.alternate_email, size: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: passCtrl,
+                    obscureText: obscurePass,
+                    decoration: InputDecoration(
+                      labelText: 'Пароль / App Password',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.lock_outline, size: 18),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscurePass ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+                        onPressed: () => setDialogState(() => obscurePass = !obscurePass),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: fromCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Имя отправителя (необязательно)',
+                      hintText: 'ООО Жизнь Март — Отдел снабжения',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.badge_outlined, size: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.07),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('💡 Подсказка:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        SizedBox(height: 4),
+                        Text('Gmail: включите двухфакторную аутентификацию → Безопасность → Пароли приложений', style: TextStyle(fontSize: 12)),
+                        SizedBox(height: 2),
+                        Text('Яндекс: Настройки → Безопасность → Пароли приложений', style: TextStyle(fontSize: 12)),
+                        SizedBox(height: 2),
+                        Text('Mail.ru: smtp.mail.ru, порт 587', style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена'),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.check_circle_outline, size: 16),
+              label: const Text('Сохранить и применить'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                if (userCtrl.text.trim().isEmpty || passCtrl.text.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Укажите email и пароль'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx);
+                try {
+                  await apiService.configureSmtp(
+                    smtpHost: hostCtrl.text.trim(),
+                    smtpPort: int.tryParse(portCtrl.text.trim()) ?? 587,
+                    smtpUser: userCtrl.text.trim(),
+                    smtpPassword: passCtrl.text,
+                    smtpFrom: fromCtrl.text.trim().isEmpty ? null : fromCtrl.text.trim(),
+                  );
+                  if (mounted) {
+                    setState(() => _smtpConfigured = true);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.white, size: 18),
+                            SizedBox(width: 8),
+                            Text('SMTP настроен — письма будут отправляться реально'),
+                          ],
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _loadSuppliers() {
@@ -192,7 +408,52 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
             'Найдено: ${currentSuppliers.length}',
             style: TextStyle(color: theme.colorScheme.primary.withOpacity(0.7), fontWeight: FontWeight.w500),
           ),
-          const SizedBox(width: 20),
+          const SizedBox(width: 12),
+          // SMTP configuration button
+          Tooltip(
+            message: _smtpConfigured
+                ? 'SMTP настроен — нажмите для изменения'
+                : 'Настроить SMTP для отправки писем поставщикам',
+            child: InkWell(
+              onTap: () => _showSmtpDialog(theme),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _smtpConfigured
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _smtpConfigured ? Colors.green : Colors.orange,
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _smtpConfigured
+                          ? Icons.mark_email_read_outlined
+                          : Icons.mail_lock_outlined,
+                      size: 16,
+                      color: _smtpConfigured ? Colors.green : Colors.orange,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _smtpConfigured ? 'SMTP ✓' : 'Настроить SMTP',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _smtpConfigured ? Colors.green : Colors.orange,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           IconButton(
             icon: Icon(themeService.themeMode == ThemeMode.light ? Icons.dark_mode_outlined : Icons.light_mode_outlined),
             onPressed: themeService.toggleTheme,

@@ -99,6 +99,7 @@ class Supplier(SupplierBase):
     id: int
     products: List[Product] = []
     price_items: List[PriceItem] = []
+    price_list_urls: List[str] = []
     rfq_requests: List[RFQRequest] = []
     model_config = ConfigDict(from_attributes=True)
 
