@@ -237,8 +237,3 @@ git commit -m "feat: описание"
 git push origin feature/your-feature
 ```
 
----
-
-<div align="center">
-Разработано для нужд отдела снабжения · 2025
-</div>
