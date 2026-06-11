@@ -6,6 +6,31 @@ import json
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 
+# Legal form regex for extracting company names
+_LEGAL_FORMS = r"(?:ООО|ОАО|ЗАО|ПАО|АО|ИП|КФХ|ТД|ГК|НПО|ФГУП|МУП)"
+_LEGAL_FORM_RE = re.compile(
+    rf"(?:{_LEGAL_FORMS})\s*[«\"\"'']([^»\"\"'']+)[»\"\"'']",
+    re.IGNORECASE
+)
+_LEGAL_FORM_PLAIN_RE = re.compile(
+    rf"({_LEGAL_FORMS})\s+([А-ЯЁA-Z][а-яёa-z\-А-ЯA-Z0-9\s]{{1,40}})",
+    re.IGNORECASE
+)
+
+
+def _extract_company_name_from_text(text: str) -> str | None:
+    """Extract company name from arbitrary text using legal form patterns."""
+    if not text:
+        return None
+    m = _LEGAL_FORM_RE.search(text)
+    if m:
+        return m.group(0).strip()
+    m = _LEGAL_FORM_PLAIN_RE.search(text)
+    if m:
+        return f"{m.group(1)} {m.group(2).strip()}"
+    return None
+
+
 class DeepParser:
     def __init__(self):
         self.client = httpx.AsyncClient(
@@ -35,6 +60,7 @@ class DeepParser:
                     if llm_data:
                         emails = llm_data.get("emails", [])
                         return {
+                            "company_name": llm_data.get("company_name") or _extract_company_name_from_text(markdown),
                             "inn": llm_data.get("inn"),
                             "phones": llm_data.get("phones", []),
                             "emails": emails,
@@ -51,7 +77,9 @@ class DeepParser:
                         }
                 
                 # Fallback: parse markdown using regex
-                return self._parse_text_via_regex(markdown, base_url)
+                result = self._parse_text_via_regex(markdown, base_url)
+                result["company_name"] = _extract_company_name_from_text(markdown)
+                return result
                 
         # Default fallback
         return await self._parse_via_bs4(base_url)
@@ -230,6 +258,7 @@ class DeepParser:
             "emails": set(),
             "personal_email": False,
             "inn": None,
+            "company_name": None,
             "payment_delay_days": 0,
             "min_order_kg": None,
             "min_order_rub": None,
@@ -255,6 +284,28 @@ class DeepParser:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 text = soup.get_text(separator=' ', strip=True)
                 
+                # 0. Company name extraction (from first page or /about)
+                if not parsed_data["company_name"]:
+                    # Try og:site_name meta tag
+                    og_name = soup.find("meta", property="og:site_name")
+                    if og_name and og_name.get("content"):
+                        cn = og_name["content"].strip()
+                        if len(cn) > 2:
+                            parsed_data["company_name"] = cn
+
+                    # Try HTML <title>
+                    if not parsed_data["company_name"] and soup.title and soup.title.string:
+                        title_text = soup.title.string.strip()
+                        extracted = _extract_company_name_from_text(title_text)
+                        if extracted:
+                            parsed_data["company_name"] = extracted
+
+                    # Try body text for legal forms
+                    if not parsed_data["company_name"]:
+                        extracted = _extract_company_name_from_text(text[:3000])
+                        if extracted:
+                            parsed_data["company_name"] = extracted
+
                 # 1. Phones
                 phone_pattern = r"(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"
                 for match in re.findall(phone_pattern, text):
@@ -323,6 +374,7 @@ class DeepParser:
 
         final_emails = list(parsed_data["emails"])
         return {
+            "company_name": parsed_data["company_name"],
             "inn": parsed_data["inn"],
             "phones": list(parsed_data["phones"]),
             "emails": final_emails,
