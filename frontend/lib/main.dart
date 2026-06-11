@@ -78,7 +78,7 @@ class FoodSupplierApp extends StatelessWidget {
           bodyMedium: TextStyle(color: Color(0xFF94A3B8)),
         ),
       ),
-      home: const SupplierListScreen(),
+      home: const SelectionArea(child: SupplierListScreen()),
     );
   }
 }
