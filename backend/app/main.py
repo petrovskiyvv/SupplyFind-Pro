@@ -81,7 +81,11 @@ async def search_suppliers(
             return json.loads(cached)
 
     # First check DB
-    query = db.query(models.Supplier).filter(models.Supplier.category == category, models.Supplier.city == city)
+    query = db.query(models.Supplier).filter(
+        models.Supplier.category == category,
+        models.Supplier.city == city,
+        models.Supplier.is_hidden == False
+    )
     if verified_only:
         query = query.filter(models.Supplier.is_verified == True)
     if has_certificate:
@@ -104,7 +108,11 @@ async def search_suppliers(
             active_searches.discard(search_key)
         
         # Re-query
-        query = db.query(models.Supplier).filter(models.Supplier.category == category, models.Supplier.city == city)
+        query = db.query(models.Supplier).filter(
+            models.Supplier.category == category,
+            models.Supplier.city == city,
+            models.Supplier.is_hidden == False
+        )
         if verified_only:
             query = query.filter(models.Supplier.is_verified == True)
         if has_certificate:
@@ -199,9 +207,10 @@ def compare_suppliers(supplier_ids: List[int], db: Session = Depends(get_db)):
 def get_suppliers(
     category: Optional[str] = None,
     city: Optional[str] = None,
+    show_hidden: bool = False,
     db: Session = Depends(get_db)
 ):
-    query = db.query(models.Supplier).filter(models.Supplier.is_hidden == False)
+    query = db.query(models.Supplier).filter(models.Supplier.is_hidden == show_hidden)
     if category:
         query = query.filter(models.Supplier.category == category)
     if city:

@@ -26,6 +26,7 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
   bool onlyVerified = false;
   bool hasCertificates = false;
   bool _smtpConfigured = false;
+  bool _showHidden = false;
   
   final Set<int> selectedSupplierIds = {};
   List<Supplier> currentSuppliers = [];
@@ -322,6 +323,7 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
         city: selectedCity,
         verifiedOnly: onlyVerified,
         hasCertificate: hasCertificates,
+        showHidden: _showHidden,
       );
     });
   }
@@ -758,6 +760,13 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
               _buildFilterChip("Верифицированные", onlyVerified, (v) => setState(() => onlyVerified = v), theme),
               const SizedBox(width: 8),
               _buildFilterChip("Сертификаты", hasCertificates, (v) => setState(() => hasCertificates = v), theme),
+              const SizedBox(width: 8),
+              _buildFilterChip("Скрытые", _showHidden, (v) {
+                setState(() {
+                  _showHidden = v;
+                });
+                _loadSuppliers();
+              }, theme),
             ],
           ),
         ],
@@ -837,23 +846,35 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
                             ],
                           ),
                           IconButton(
-                            icon: const Icon(Icons.visibility_off_outlined, size: 20, color: Colors.grey),
-                            tooltip: loc.translate('hide'),
+                            icon: Icon(
+                              _showHidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                              size: 20,
+                              color: _showHidden ? Colors.green : Colors.grey,
+                            ),
+                            tooltip: _showHidden ? 'Показать в списке' : loc.translate('hide'),
                             onPressed: () async {
                               final supplierId = s.id;
                               try {
-                                await apiService.hideSupplier(supplierId);
+                                if (_showHidden) {
+                                  await apiService.unhideSupplier(supplierId);
+                                } else {
+                                  await apiService.hideSupplier(supplierId);
+                                }
                                 _loadSuppliers();
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).clearSnackBars();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text(loc.translate('supplier_hidden')),
+                                      content: Text(_showHidden ? 'Поставщик возвращен в список' : loc.translate('supplier_hidden')),
                                       duration: const Duration(seconds: 5),
                                       action: SnackBarAction(
                                         label: loc.translate('undo'),
                                         onPressed: () async {
-                                          await apiService.unhideSupplier(supplierId);
+                                          if (_showHidden) {
+                                            await apiService.hideSupplier(supplierId);
+                                          } else {
+                                            await apiService.unhideSupplier(supplierId);
+                                          }
                                           _loadSuppliers();
                                         },
                                       ),

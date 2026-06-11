@@ -17,7 +17,13 @@ class ApiService {
     throw Exception('Failed to load supplier $id');
   }
 
-  Future<List<Supplier>> getSuppliers({String? category, String? city, bool verifiedOnly = false, bool hasCertificate = false}) async {
+  Future<List<Supplier>> getSuppliers({
+    String? category, 
+    String? city, 
+    bool verifiedOnly = false, 
+    bool hasCertificate = false,
+    bool showHidden = false,
+  }) async {
     final queryParameters = <String, String>{};
     if (category != null && category.isNotEmpty && category != 'All') {
       queryParameters['category'] = category;
@@ -25,8 +31,11 @@ class ApiService {
     if (city != null && city.isNotEmpty && city != 'All') {
       queryParameters['city'] = city;
     }
+    if (showHidden) {
+      queryParameters['show_hidden'] = 'true';
+    }
 
-    if (category != null && category != 'All' && city != null && city != 'All') {
+    if (!showHidden && category != null && category != 'All' && city != null && city != 'All') {
         final uri = Uri.parse('$baseUrl/api/suppliers/search').replace(queryParameters: {
             'category': category,
             'city': city,
